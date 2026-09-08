@@ -1,0 +1,16 @@
+{
+  "name": "mutiple-platform-auth-phone-number",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "crypto": "^1.0.1"
+  }
+}
