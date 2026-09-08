@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-electron
+auto-imports.d.ts
+components.d.ts
+output/

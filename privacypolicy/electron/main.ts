@@ -1,0 +1,74 @@
+// electron/main.js
+
+// 控制应用生命周期和创建原生浏览器窗口的模组
+import { app, BrowserWindow, ipcMain } from "electron";
+import path from "path";
+import * as apiMap from "./api";
+// 在Electron主进程中
+import { session } from "electron";
+
+const NODE_ENV = process.env.NODE_ENV;
+
+function createWindow() {
+  // 创建浏览器窗口
+  const mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: true,
+      // enableRemoteModule: true,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+
+  // 加载 index.html
+  // mainWindow.loadFile('dist/index.html') 将该行改为下面这一行，加载url
+  mainWindow.loadURL(
+    process.env.VITE_DEV_SERVER_URL ||
+      `file://${path.join(__dirname, "../dist/index.html")}`,
+  );
+
+  // 打开开发工具
+  if (NODE_ENV === "development") {
+    mainWindow.webContents.openDevTools();
+  }
+
+  return mainWindow;
+}
+
+// 这段程序将会在 Electron 结束初始化
+// 和创建浏览器窗口的时候调用
+// 部分 API 在 ready 事件触发后才能使用。
+app.whenReady().then(() => {
+  createWindow();
+  // 为所有的webContents设置CSP
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self' https: data: blob: 'unsafe-inline'",
+        ],
+      },
+    });
+  });
+
+  app.on("activate", function () {
+    // 通常在 macOS 上，当点击 dock 中的应用程序图标时，如果没有其他
+    // 打开的窗口，那么程序会重新创建一个窗口。
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+  ipcMain.handle("api", (_, someArgument) => {
+    const { data, tokenParams } = JSON.parse(someArgument.data);
+    return apiMap[someArgument.api](data, tokenParams);
+  });
+});
+
+// 除了 macOS 外，当所有窗口都被关闭的时候退出程序。 因此，通常对程序和它们在
+// 任务栏上的图标来说，应当保持活跃状态，直到用户使用 Cmd + Q 退出。
+app.on("window-all-closed", function () {
+  if (process.platform !== "darwin") app.quit();
+});
+
+// 在这个文件中，你可以包含应用程序剩余的所有部分的代码，
