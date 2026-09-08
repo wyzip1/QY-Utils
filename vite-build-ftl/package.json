@@ -1,0 +1,39 @@
+{
+  "name": "build-ftl",
+  "version": "1.0.1",
+  "description": "",
+  "scripts": {
+    "test": "vite -c ./test/vite.config.ts -m test build",
+    "build": "tsc"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "keywords": [],
+  "author": "",
+  "type": "module",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.3.0",
+    "@types/react": "^18.2.11",
+    "@types/react-dom": "^18.2.4",
+    "@typescript-eslint/eslint-plugin": "^5.59.8",
+    "@typescript-eslint/parser": "^5.59.8",
+    "axios": "^1.6.2",
+    "eslint": "^8.26.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.8",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "rollup": "^4.9.0",
+    "typescript": "^5.0.4",
+    "vite": "^2.7.2"
+  },
+  "dependencies": {
+    "fs-extra": "^11.1.0",
+    "inquirer": "^9.1.4",
+    "lodash.trim": "^4.5.1",
+    "mkdirp": "^3.0.1",
+    "qiniu": "^7.8.0",
+    "signale": "^1.4.0"
+  }
+}

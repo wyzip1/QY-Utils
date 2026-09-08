@@ -1,0 +1,27 @@
+{
+  "extends": "./config/path.tsconfig.json",
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+    "target": "es2019",
+
+    /* Language and Environment */
+    "allowSyntheticDefaultImports": true,
+    /* Modules */
+    "module": "commonjs",                                /* Specify what module code is generated. */
+    "moduleResolution": "node",                       /* Specify how TypeScript looks up a file from a given module specifier. */
+
+    /* JavaScript Support */
+    "forceConsistentCasingInFileNames": true,            /* Ensure that casing is correct in imports. */
+
+    /* Type Checking */
+    "strict": true,                                      /* Enable all strict type-checking options. */
+    "noImplicitAny": false,                            /* Enable error reporting for expressions and declarations with an implied 'any' type. */
+
+
+    /* Completeness */
+    "useDefineForClassFields": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
+    "jsx": "react",     // react，
+  }
+}

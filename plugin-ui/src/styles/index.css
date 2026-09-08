@@ -1,0 +1,47 @@
+.page-container {
+  --base-size: 12px;
+
+  padding: 8px;
+  box-sizing: border-box;
+  background-color: #fff;
+  height: 100%;
+  font-size: 12px;
+  min-width: 900px;
+}
+
+.display-none {
+  display: none !important;
+}
+
+.ant-btn.ant-btn-link:focus {
+  color: #1677ff;
+  border-color: transparent;
+}
+
+.ant-btn.ant-btn-link:hover {
+  color: #69b1ff;
+  border-color: transparent;
+}
+
+.ant-btn.ant-btn-link.active {
+  color: #0958d9;
+  border-color: transparent;
+}
+
+.ant-modal-header,
+.ant-modal-body,
+.ant-modal-footer {
+  padding: 0;
+  border-bottom: unset;
+  border-top: unset;
+}
+
+.ant-modal-close-x {
+  width: 20px;
+  height: 20px;
+}
+
+
+.ant-popover-arrow {
+  border-style: none;
+}
