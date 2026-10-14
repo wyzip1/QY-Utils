@@ -1,6 +1,6 @@
 {
   "name": "build-ftl",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "",
   "scripts": {
     "test": "vite -c ./test/vite.config.ts -m test build",

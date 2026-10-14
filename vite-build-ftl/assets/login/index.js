@@ -42,7 +42,7 @@ export async function getUserInfo({ once } = {
 export async function login() {
   const { default: inquirerModule } = await inquirer;
   const gitInfo = await getGitInfo();
-  let answers = await inquirerModule.prompt([
+  let answers = await (inquirer.prompt || inquirerModule).prompt([
     {
       type: "input",
       name: "username",
