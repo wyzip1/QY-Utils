@@ -2,8 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { EXTENSION_ID } from "./constants.js";
-import type { BrowserId } from "./index.js";
+import { EXTENSION_ID, type BrowserId } from "./constants.js";
 
 export interface BrowserProfile {
   directory: string;
@@ -18,6 +17,16 @@ export interface BrowserDefinition {
   executablePath: string;
   dataDirectory: string;
   nativeMessagingDirectory: string;
+  /**
+   * 除自身目录外，该浏览器实际还会读取 Native Messaging 清单的目录。
+   * ego lite 就是这种情况：它沿用 Chrome 的用户级目录，不看自己的数据目录。
+   */
+  sharedNativeMessagingDirectories?: string[];
+}
+
+/** 某个浏览器全部生效的 Native Messaging 清单目录（去重，主目录优先）。 */
+export function nativeMessagingDirectories(browser: BrowserDefinition): string[] {
+  return [...new Set([browser.nativeMessagingDirectory, ...(browser.sharedNativeMessagingDirectories ?? [])])];
 }
 
 export interface DiscoveredBrowser extends BrowserDefinition {
@@ -66,6 +75,19 @@ export function defaultBrowserDefinitions(homeDirectory: string): BrowserDefinit
       dataDirectory: path.join(support, "Chromium"),
       nativeMessagingDirectory: path.join(support, "Chromium/NativeMessagingHosts"),
     },
+    {
+      // ego lite（Citro Labs）是 Chromium 分支，数据目录与 Chrome 同构；
+      // 但它查找 Native Messaging 清单时沿用的是 Chrome 的用户级目录，
+      // 实测不会读取自己数据目录下的 NativeMessagingHosts。
+      id: "ego",
+      name: "ego lite",
+      bundleId: "com.citrolabs.ego.lite",
+      applicationPath: "/Applications/ego lite.app",
+      executablePath: "/Applications/ego lite.app/Contents/MacOS/ego lite",
+      dataDirectory: path.join(support, "Citro Labs/ego lite"),
+      nativeMessagingDirectory: path.join(support, "Citro Labs/ego lite/NativeMessagingHosts"),
+      sharedNativeMessagingDirectories: [path.join(support, "Google/Chrome/NativeMessagingHosts")],
+    },
   ];
 }
 
@@ -83,31 +105,49 @@ async function readProfiles(dataDirectory: string): Promise<BrowserProfile[]> {
   }
 }
 
+interface ExtensionSetting {
+  path?: string;
+  state?: number;
+}
+
+/**
+ * 读取扩展在该配置档的安装记录。
+ * Chromium 会把扩展设置写进 `Preferences` 或签名保护的 `Secure Preferences`，
+ * 不同版本/分支落点不同（ego lite 就只写后者），两份都要看。
+ */
+async function readExtensionSetting(
+  browser: BrowserDefinition,
+  profileDirectory: string,
+): Promise<ExtensionSetting | undefined> {
+  for (const fileName of ["Preferences", "Secure Preferences"]) {
+    try {
+      const preferences = JSON.parse(
+        await readFile(path.join(browser.dataDirectory, profileDirectory, fileName), "utf8"),
+      ) as { extensions?: { settings?: Record<string, ExtensionSetting> } };
+      const setting = preferences.extensions?.settings?.[EXTENSION_ID];
+      if (setting) return setting;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 async function profileHasExtension(
   browser: BrowserDefinition,
   profileDirectory: string,
   extensionDirectory: string,
 ): Promise<boolean> {
-  try {
-    const preferences = JSON.parse(
-      await readFile(
-        path.join(browser.dataDirectory, profileDirectory, "Preferences"),
-        "utf8",
-      ),
-    ) as {
-      extensions?: { settings?: Record<string, { path?: string; state?: number }> };
-    };
-    const setting = preferences.extensions?.settings?.[EXTENSION_ID];
-    if (!setting || setting.state !== 1) return false;
-    const settingPath = setting.path;
-    if (typeof settingPath !== "string" || settingPath.length === 0) return false;
-    return (
-      settingPath === extensionDirectory ||
-      path.resolve(settingPath) === path.resolve(extensionDirectory)
-    );
-  } catch {
-    return false;
-  }
+  const setting = await readExtensionSetting(browser, profileDirectory);
+  if (!setting) return false;
+  // 未写 state 表示默认启用；只有显式禁用（0）等状态才排除。
+  if (setting.state !== undefined && setting.state !== 1) return false;
+  const settingPath = setting.path;
+  if (typeof settingPath !== "string" || settingPath.length === 0) return false;
+  return (
+    settingPath === extensionDirectory ||
+    path.resolve(settingPath) === path.resolve(extensionDirectory)
+  );
 }
 
 /**

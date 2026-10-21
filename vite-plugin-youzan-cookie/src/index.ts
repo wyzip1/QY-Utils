@@ -1,7 +1,8 @@
 import type { Plugin, ProxyOptions, UserConfig } from "vite";
+import type { BrowserId } from "./constants.js";
 import { syncNativeCookies } from "./runtime.js";
 
-export type BrowserId = "chrome" | "edge" | "brave" | "chromium";
+export type { BrowserId } from "./constants.js";
 
 export interface YouzanCookiePluginOptions {
   viewURL: string;

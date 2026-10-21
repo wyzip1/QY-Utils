@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { findProfileWithExtension, type BrowserDefinition } from "../src/browsers.js";
+import { findProfileWithExtension, defaultBrowserDefinitions, type BrowserDefinition } from "../src/browsers.js";
 import { EXTENSION_ID } from "../src/constants.js";
 
 interface PreferencesWithExtension {
@@ -33,6 +33,25 @@ async function writePreferences(
     "utf8",
   );
 }
+
+describe("defaultBrowserDefinitions", () => {
+  test("包含 ego lite 的 Chromium 目录与 Native Messaging 路径", () => {
+    const definitions = defaultBrowserDefinitions("/Users/demo");
+    expect(definitions).toContainEqual({
+      id: "ego",
+      name: "ego lite",
+      bundleId: "com.citrolabs.ego.lite",
+      applicationPath: "/Applications/ego lite.app",
+      executablePath: "/Applications/ego lite.app/Contents/MacOS/ego lite",
+      dataDirectory: "/Users/demo/Library/Application Support/Citro Labs/ego lite",
+      nativeMessagingDirectory:
+        "/Users/demo/Library/Application Support/Citro Labs/ego lite/NativeMessagingHosts",
+      sharedNativeMessagingDirectories: [
+        "/Users/demo/Library/Application Support/Google/Chrome/NativeMessagingHosts",
+      ],
+    });
+  });
+});
 
 describe("findProfileWithExtension", () => {
   test("自动发现加载了扩展且启用的配置档", async () => {
@@ -176,6 +195,37 @@ describe("findProfileWithExtension", () => {
       await expect(
         findProfileWithExtension(chromeDefinition(dataDirectory), extensionDirectory),
       ).resolves.toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("扩展记录只写在 Secure Preferences 且没有 state 时仍能发现", async () => {
+    const root = await mkdtemp("/tmp/vyc-browsers-secure-");
+    const dataDirectory = path.join(root, "ego lite");
+    const extensionDirectory = path.join(root, "extension");
+    const profileDirectory = path.join(dataDirectory, "Default");
+    await mkdir(profileDirectory, { recursive: true });
+    await writeFile(
+      path.join(dataDirectory, "Local State"),
+      `${JSON.stringify({ profile: { info_cache: { Default: { name: "您的 ego" } } } })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(profileDirectory, "Preferences"),
+      `${JSON.stringify({ extensions: { settings: {} } })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      path.join(profileDirectory, "Secure Preferences"),
+      `${JSON.stringify({ extensions: { settings: { [EXTENSION_ID]: { path: extensionDirectory } } } })}\n`,
+      "utf8",
+    );
+
+    try {
+      await expect(
+        findProfileWithExtension(chromeDefinition(dataDirectory), extensionDirectory),
+      ).resolves.toEqual({ directory: "Default", name: "您的 ego" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

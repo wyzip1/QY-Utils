@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { access, readdir } from "node:fs/promises";
+import { access, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { createInterface } from "node:readline/promises";
-import type { BrowserId } from "./index.js";
+import type { BrowserId } from "./constants.js";
 import { encodeFrame, FrameDecoder } from "./protocol.js";
 import {
   defaultBrowserDefinitions,
@@ -104,7 +104,12 @@ export async function listConnectedInstances(
         try {
           const response = await request(socketPath, "getInfo", {}, timeoutMs);
           return response.instance ? { info: response.instance, socketPath } : undefined;
-        } catch {
+        } catch (error) {
+          // 宿主进程已退出但没来得及清理的 Socket 会一直占位，顺手删除。
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "ENOENT" || code === "ECONNREFUSED") {
+            await unlink(socketPath).catch(() => {});
+          }
           return undefined;
         }
       }),
@@ -265,16 +270,35 @@ export async function syncNativeCookies(
     matches,
     item => `${item.info.browser} / ${item.info.instanceId}`,
   );
+  let target = selected;
   const response = await request(
-    selected.socketPath,
+    target.socketPath,
     "syncCookies",
     { sourceURL, targetURL },
     options.connectTimeoutMs,
-  );
+  ).catch(async (error: unknown) => {
+    // 扩展 Service Worker 被回收或宿主重启后，首次请求可能打到刚失效的 Socket。
+    // 重新发现一次在线实例再重试，避免因为一次握手抖动就回退到不同步。
+    const refreshed = matchingInstances(
+      await listConnectedInstances(options.connectTimeoutMs),
+      browser,
+      preference?.instanceId,
+    );
+    const retryTarget =
+      refreshed.find(instance => instance.socketPath !== target.socketPath) ?? refreshed[0];
+    if (!retryTarget) throw error;
+    target = retryTarget;
+    return await request(
+      target.socketPath,
+      "syncCookies",
+      { sourceURL, targetURL },
+      options.connectTimeoutMs,
+    );
+  });
   await savePreference({
-    browser: selected.info.browser,
+    browser: target.info.browser,
     ...(profileDirectory === undefined ? {} : { profileDirectory }),
-    instanceId: selected.info.instanceId,
+    instanceId: target.info.instanceId,
   });
   return response.count ?? 0;
 }

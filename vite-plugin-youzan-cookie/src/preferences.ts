@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { BrowserId } from "./index.js";
-import { PACKAGE_NAME } from "./constants.js";
+import type { BrowserId } from "./constants.js";
+import { isBrowserId, PACKAGE_NAME } from "./constants.js";
 
 export interface BrowserPreference {
   browser: BrowserId;
@@ -27,9 +27,7 @@ export async function loadPreference(
 ): Promise<BrowserPreference | undefined> {
   try {
     const value = JSON.parse(await readFile(preferencePath(homeDirectory), "utf8")) as BrowserPreference;
-    if (
-      !["chrome", "edge", "brave", "chromium"].includes(value.browser)
-    ) {
+    if (!isBrowserId(value.browser)) {
       return undefined;
     }
     return {
