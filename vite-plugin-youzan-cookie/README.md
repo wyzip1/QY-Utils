@@ -11,7 +11,7 @@ npx vite-plugin-youzan-cookie setup --browser ego
 
 `--browser` 支持 `chrome`、`edge`、`brave`、`chromium`、`ego`（ego lite）。省略时注册所有已安装的浏览器。
 
-从 1.1.x 升级时注意：`npm install` 只更新 `node_modules`，扩展与 Native Host 装在 `~/Library/Application Support/vite-plugin-youzan-cookie/`，需要重新执行一次 `setup`，再到每个已加载扩展的浏览器里点“重新加载”，新逻辑才会生效。
+从 1.1.x 升级时注意：`npm install` 只更新 `node_modules`，扩展与 Native Host 装在 `~/Library/Application Support/vite-plugin-youzan-cookie/`，需要重新执行一次 `setup`，再到每个已加载扩展的浏览器里点“重新加载”，新逻辑才会生效。1.2.x → 1.2.1 只改了插件侧的浏览器查找顺序（新增 Chrome 兜底），扩展与 Native Host 未变，无需重跑 `setup`。
 
 `setup` 会把扩展和 Native Host 安装到：
 
@@ -51,6 +51,8 @@ export default defineConfig({
 `viewURL` 为必填项，用于明确指定读取哪个有赞站点的原生登录态；路径不会被打开或导航。插件仅在 `vite serve` 时生效，并自动识别静态 `target` 为 `youzan.com` 或其子域的代理。每次 Vite 启动时，扩展都会读取适用于 `viewURL` 的 Cookie，覆盖同步到 `localhost` 并删除上次同步但已失效的名称。Vite 不再修改 `proxyReq`，浏览器请求头会直接显示同步后的 Cookie。
 
 `browser` 可以省略。插件会优先使用上次选择；未选择时查询可用浏览器并在终端提供选择。插件会自动扫描所选浏览器各配置档的 `Preferences`，找出已加载本扩展的配置档（首次在某个配置档手动“加载已解压的扩展程序”后即会被自动发现并记住）。浏览器完全退出时，以该配置档启动；浏览器已运行但扩展未连接时，为已运行进程新开该配置档窗口（不关闭或切换现有窗口）。多个实例在线时，优先按上次成功同步的 `instanceId` 确定性匹配。若任何配置档都未加载扩展，则打印加载扩展的具体步骤并等待连接（默认 120 秒，每 30 秒提示一次，可用 `waitForExtensionMs` 调整），超时后保留原代理配置并继续启动 Vite。
+
+指定的 `browser` 找不到可用实例时会**自动回退到 Chrome**：该浏览器未安装，或已安装但扩展始终未连上，都按 `目标浏览器 → chrome` 的顺序再试一次，成功回退时打印一条 warn 并把实际使用的浏览器记进偏好。指定的 `browser` 本身就是 `chrome` 时不会回退到其他浏览器。ego 在线时仍然优先 ego，不会被同时在线（但未被指定）的 Chrome 顶掉。
 
 浏览器标识由 Native Host 启动器注入。扩展只能靠 UA 猜浏览器，而 ego lite 的 UA 与 Chrome 完全相同，所以由启动器在启动瞬间识别真实浏览器：先看父进程命令行里的应用路径（`/Applications/ego lite.app/` 等），再退回 `__CFBundleIdentifier`，都识别不到才交给扩展上报值。所有浏览器共用同一个 `native-host-launcher`，因此即便两个浏览器读取同一份清单也不会混淆。
 

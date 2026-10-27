@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-youzan-cookie",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Synchronize Youzan cookies from native Chromium profiles (including ego lite) to localhost for Vite development.",
   "type": "module",
   "main": "./dist/index.js",

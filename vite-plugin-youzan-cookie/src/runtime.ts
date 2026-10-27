@@ -13,6 +13,7 @@ import {
   isBrowserRunning,
   launchBrowser,
   type BrowserDefinition,
+  type DiscoveredBrowser,
 } from "./browsers.js";
 import { loadPreference, savePreference } from "./preferences.js";
 import { installedExtensionDirectory, runtimeDirectory } from "./paths.js";
@@ -149,15 +150,42 @@ function matchingInstances(
   return byBrowser;
 }
 
-async function resolveBrowserAndProfile(
+/**
+ * 目标浏览器的尝试顺序：显式指定或记住的浏览器优先，Chrome 作为兜底。
+ * 目标本身就是 Chrome 时不再重复；未指定目标时保持原有语义（全部已安装浏览器参与选择）。
+ */
+function browserAttempts(browser: BrowserId | undefined): readonly (BrowserId | undefined)[] {
+  if (browser === undefined) return [undefined];
+  return browser === "chrome" ? ["chrome"] : [browser, "chrome"];
+}
+
+/** 按尝试顺序取第一个有在线实例的浏览器：前一个浏览器无实例时才看兜底项。 */
+function firstMatching(
+  instances: readonly ConnectedBrowserInstance[],
+  attempts: readonly (BrowserId | undefined)[],
+  instanceId?: string,
+): ConnectedBrowserInstance[] {
+  for (const attempt of attempts) {
+    const matches = matchingInstances(instances, attempt, instanceId);
+    if (matches.length > 0) return matches;
+  }
+  return [];
+}
+
+function attemptLabel(attempts: readonly (BrowserId | undefined)[]): string {
+  return attempts.map(attempt => attempt ?? "全部已安装浏览器").join("、");
+}
+
+async function selectBrowserAndProfile(
+  installed: readonly DiscoveredBrowser[],
   browserId: BrowserId | undefined,
   rememberedProfileDirectory: string | undefined,
-): Promise<{ browser: BrowserDefinition; profileDirectory: string | undefined }> {
-  const installed = await discoverBrowsers(defaultBrowserDefinitions(homedir()));
+): Promise<{ browser: DiscoveredBrowser; profileDirectory: string | undefined } | undefined> {
   const candidates = browserId
     ? installed.filter(browser => browser.id === browserId)
     : installed;
-  if (candidates.length === 0) throw new Error("没有找到符合条件的已安装 Chromium 浏览器");
+  // 返回 undefined 表示该候选浏览器未安装，交给下一个兜底候选继续尝试。
+  if (candidates.length === 0) return undefined;
   const browser = await chooseFromList(candidates, item => item.name);
   const profile = await findProfileWithExtension(
     browser,
@@ -225,51 +253,82 @@ export async function syncNativeCookies(
   targetURL: string,
 ): Promise<number> {
   const preference = await loadPreference();
-  const browser = options.browser ?? preference?.browser;
-  let instances = await listConnectedInstances(options.connectTimeoutMs);
-  let matches = matchingInstances(instances, browser, preference?.instanceId);
-  let profileDirectory = preference?.profileDirectory;
+  const requestedBrowser = options.browser ?? preference?.browser;
+  const attempts = browserAttempts(requestedBrowser);
+  const waitMs = options.waitForExtensionMs ?? DEFAULT_WAIT_FOR_EXTENSION_MS;
+
   let guidance = "";
-  if (matches.length === 0) {
-    const waitMs = options.waitForExtensionMs ?? DEFAULT_WAIT_FOR_EXTENSION_MS;
-    const resolved = await resolveBrowserAndProfile(browser, profileDirectory);
-    profileDirectory = resolved.profileDirectory;
-    const browserState = await startOfflineBrowser(resolved.browser, profileDirectory);
-    if (browserState === "already-running") {
-      guidance = await extensionGuidance();
-      console.info(
-        `${LOG_PREFIX} 目标浏览器已运行但扩展未连接；为保护现有窗口，不会自动打开或切换配置档。\n` +
-          `  ${guidance}。\n` +
-          `  正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒，期间每 30 秒提示一次；无需同步可忽略）...`,
-      );
-    } else if (browserState === "profile-opened") {
-      console.info(
-        `${LOG_PREFIX} 已为目标配置档 ${profileDirectory} 新开浏览器窗口（未关闭或切换现有窗口），正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒）...`,
-      );
-    } else {
-      guidance = await extensionGuidance();
-      console.info(
-        `${LOG_PREFIX} 已启动目标浏览器${profileDirectory ? `（配置档：${profileDirectory}）` : ""}，正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒）...\n` +
-          `  ${guidance}。`,
-      );
+  let profileDirectory: string | undefined;
+  let sawInstalledBrowser = false;
+  let fallbackAnnounced = false;
+  const announceFallback = (used: BrowserId): void => {
+    if (fallbackAnnounced || requestedBrowser === undefined || used === requestedBrowser) return;
+    fallbackAnnounced = true;
+    console.warn(`${LOG_PREFIX} 未找到 ${requestedBrowser} 的可用实例，已回退到 ${used}。`);
+  };
+
+  let instances = await listConnectedInstances(options.connectTimeoutMs);
+  let matches = firstMatching(instances, attempts, preference?.instanceId);
+  if (matches.length > 0) {
+    // 沿用上次的配置档，但只在同一浏览器内有效，避免回退后串用别的浏览器配置档。
+    profileDirectory =
+      preference?.browser === matches[0]?.info.browser ? preference?.profileDirectory : undefined;
+  } else {
+    const installed = await discoverBrowsers(defaultBrowserDefinitions(homedir()));
+    for (const attempt of attempts) {
+      // 记住的配置档由某个浏览器产生，换候选浏览器时重新探测。
+      const remembered =
+        preference?.browser === undefined || preference.browser === attempt
+          ? preference?.profileDirectory
+          : undefined;
+      const resolved = await selectBrowserAndProfile(installed, attempt, remembered);
+      if (!resolved) continue;
+      sawInstalledBrowser = true;
+      profileDirectory = resolved.profileDirectory;
+      guidance = "";
+      announceFallback(resolved.browser.id);
+      const browserState = await startOfflineBrowser(resolved.browser, profileDirectory);
+      if (browserState === "already-running") {
+        guidance = await extensionGuidance();
+        console.info(
+          `${LOG_PREFIX} 目标浏览器已运行但扩展未连接；为保护现有窗口，不会自动打开或切换配置档。\n` +
+            `  ${guidance}。\n` +
+            `  正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒，期间每 30 秒提示一次；无需同步可忽略）...`,
+        );
+      } else if (browserState === "profile-opened") {
+        console.info(
+          `${LOG_PREFIX} 已为目标配置档 ${profileDirectory} 新开浏览器窗口（未关闭或切换现有窗口），正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒）...`,
+        );
+      } else {
+        guidance = await extensionGuidance();
+        console.info(
+          `${LOG_PREFIX} 已启动目标浏览器${profileDirectory ? `（配置档：${profileDirectory}）` : ""}，正在等待扩展连接（最多 ${Math.round(waitMs / 1000)} 秒）...\n` +
+            `  ${guidance}。`,
+        );
+      }
+      instances = await waitForInstances(waitMs, waitedMs => {
+        console.info(
+          `${LOG_PREFIX} 仍在等待扩展连接（已等待 ${Math.round(waitedMs / 1000)} 秒）...` +
+            (guidance ? `\n  ${guidance}。` : ""),
+        );
+      });
+      matches = matchingInstances(instances, resolved.browser.id, preference?.instanceId);
+      if (matches.length > 0) break;
     }
-    instances = await waitForInstances(waitMs, waitedMs => {
-      console.info(
-        `${LOG_PREFIX} 仍在等待扩展连接（已等待 ${Math.round(waitedMs / 1000)} 秒）...` +
-          (guidance ? `\n  ${guidance}。` : ""),
-      );
-    });
-    matches = matchingInstances(instances, browser, preference?.instanceId);
   }
   if (matches.length === 0) {
+    if (!sawInstalledBrowser) throw new Error("没有找到符合条件的已安装 Chromium 浏览器");
     throw new Error(
-      `没有找到匹配且已连接的浏览器扩展实例。${guidance || (await extensionGuidance())}`,
+      `没有找到匹配且已连接的浏览器扩展实例（已尝试：${attemptLabel(attempts)}）。${
+        guidance || (await extensionGuidance())
+      }`,
     );
   }
   const selected = await chooseFromList(
     matches,
     item => `${item.info.browser} / ${item.info.instanceId}`,
   );
+  announceFallback(selected.info.browser);
   let target = selected;
   const response = await request(
     target.socketPath,
@@ -281,7 +340,7 @@ export async function syncNativeCookies(
     // 重新发现一次在线实例再重试，避免因为一次握手抖动就回退到不同步。
     const refreshed = matchingInstances(
       await listConnectedInstances(options.connectTimeoutMs),
-      browser,
+      selected.info.browser,
       preference?.instanceId,
     );
     const retryTarget =

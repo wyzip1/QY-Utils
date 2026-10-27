@@ -58,7 +58,7 @@ function extensionManifest(): string {
     {
       manifest_version: 3,
       name: "Youzan Cookie Bridge",
-      version: "1.2.0",
+      version: "1.2.1",
       description: "Synchronizes Youzan cookies to localhost for Vite development.",
       key: EXTENSION_KEY,
       permissions: ["alarms", "cookies", "nativeMessaging", "storage"],
